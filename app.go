@@ -9,6 +9,7 @@ import (
 	"os"
 	"sort"
 	"strings"
+	"time"
 
 	"github.com/prometheus/common/model"
 )
@@ -61,7 +62,12 @@ func proxyHandler(w http.ResponseWriter, r *http.Request) {
 
 	remote := make([]ApiResponse, 0)
 	for range servers {
-		remote = append(remote, ParseResponse((<-ch).result))
+		response := <-ch
+		if strings.HasPrefix(response.status, `200`) {
+			remote = append(remote, ParseResponse(response.result))
+		} else {
+			log.Println("Ignoring response with status", response.status)
+		}
 	}
 	merged := Merge(api, remote)
 	asJson, err := json.Marshal(merged)
@@ -72,12 +78,21 @@ func proxyHandler(w http.ResponseWriter, r *http.Request) {
 }
 
 func DoHTTPGet(url string, ch chan<- HTTPResponse) {
-	//Execute the HTTP get
+	timeout := time.Duration(5 * time.Second)
+	client := http.Client{
+		Timeout: timeout,
+	}
 	log.Println("Getting", url)
-	httpResponse, _ := http.Get(url)
-	httpBody, _ := ioutil.ReadAll(httpResponse.Body)
-	//Send an HTTPResponse back to the channel
-	ch <- HTTPResponse{httpResponse.Status, httpBody}
+	httpResponse, err := client.Get(url)
+	if err != nil {
+		log.Println("Error in response", err)
+		ch <- HTTPResponse{`failed`, []byte(err.Error())}
+	} else {
+		defer httpResponse.Body.Close()
+		httpBody, _ := ioutil.ReadAll(httpResponse.Body)
+		//Send an HTTPResponse back to the channel
+		ch <- HTTPResponse{httpResponse.Status, httpBody}
+	}
 }
 
 func ParseResponse(body []byte) ApiResponse {
@@ -96,11 +111,11 @@ func Merge(api string, responses []ApiResponse) ApiResponse {
 	var qr QueryResult
 	var ar ApiResponse
 
-	if len(responses) > 1 {
-		ar = responses[0]
-	} else {
+	if len(responses) == 0 {
 		log.Println("No responses received")
-		return ApiResponse{}
+		return ApiResponse{Status: "failure"}
+	} else {
+		ar = responses[0]
 	}
 
 	switch api {
