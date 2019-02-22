@@ -1,3 +1,7 @@
+# This project is not being maintained
+
+It works, but I've found [Promxy](https://github.com/jacksontj/promxy) which handles more edge cases than this, so I've moved to that. You should, too!
+
 # PromProxy
 
 A daemon that receives Prometheus API calls from a system such as Grafana, sends that request to multiple Prometheus instances, and aggregates the responses.
